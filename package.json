@@ -1,0 +1,25 @@
+{
+  "name": "desec-io-dns-adapter",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mplabs/deSEC-traefik-adapter.git"
+  },
+  "keywords": [],
+  "author": "Felix Dürrwald <mplabs@mplabs.de> (https://github.com/mplabs)",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/mplabs/deSEC-traefik-adapter/issues"
+  },
+  "homepage": "https://github.com/mplabs/deSEC-traefik-adapter#readme",
+  "dependencies": {
+    "axios": "^0.19.2",
+    "dotenv": "^8.2.0",
+    "express": "^4.17.1"
+  }
+}
