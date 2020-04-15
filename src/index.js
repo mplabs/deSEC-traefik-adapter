@@ -49,7 +49,7 @@ app.post('/present', ash(async(req, res) => {
     type: 'TXT',
     records: [
       ...get(currentRrsets, 'records', []),
-      `\\"${value}\\"`
+      `\"${value}\"`
     ],
     ttl: minimum_ttl
   }
