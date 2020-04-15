@@ -24,6 +24,7 @@ function getInfix(domainName, fqdn) {
   // *.mplabs.cloud =>
   // foo.mplabs.cloud => .foo
   return fqdn
+    .replace('_acme-challenge.', '')
     .replace(domainName, '')
     .replace(/(.*)\.$/, '.$1')
     .replace(/\.\*/, '')

@@ -1,136 +1,69 @@
 require('dotenv').config()
 
-const axios = require('axios')
 const bodyParser = require('body-parser')
 const express = require('express')
+const logger = require('morgan')
 
-const { ash, get, getInfix } = require('./libs/util')
+const { ash, getInfix } = require('./libs/util')
+const Resource = require('./libs/desec.resource')
 
 const {
-  HOST = '0.0.0.0',
+  HOST = '127.0.0.1',
   PORT = 1337,
-  DESEC_URL = 'https://desec.io/api/v1/',
   DEDYN_TOKEN,
   DEDYN_NAME,
+  NODE_ENV
 } = process.env
 
-let minimum_ttl
+if (!(DEDYN_NAME || DEDYN_TOKEN)) {
+  throw new Error('Set DEDYN_TOKEN and DEDYN_NAME as environment variables.')
+  process.exit(1)
+}
+
+const resource = Resource({ domainName: DEDYN_NAME, token: DEDYN_TOKEN })
 
 const app = express()
 
-const request = axios.create({
-  baseURL: DESEC_URL,
-  headers: {
-    'Accept': 'application/json',
-    'Content-Type': 'application/json',
-    'Authorization': `token ${DEDYN_TOKEN}`,
-  },
-  responseType: 'json',
-  validateStatus: status => status >= 200 && status < 300,
-})
-
 app.use(bodyParser.json())
+app.use(logger(NODE_ENV === 'production' ? 'tiny' : 'dev'))
 
-app.use((req, res, next) => {
-  if (!(DEDYN_NAME && DEDYN_TOKEN)) {
-    res.status(400).send('Bad Request')
-  } else {
-    next()
-  }
-})
+app.use(ash(async (req, res, next) => {
+  req.app.locals.minimumTtl = await resource.minimumTtl()
 
-app.post('/present', ash(async(req, res) => {
-  const { fqdn, value } = req.body
-  
-  const currentRrsets = await getCurrentRrsets(DEDYN_NAME, fqdn)
-  
-  const rrset = {
-    subname: `_acme-challenge${getInfix(DEDYN_NAME, fqdn)}`,
-    type: 'TXT',
-    records: [
-      ...get(currentRrsets, 'records', []),
-      `\"${value}\"`
-    ],
-    ttl: minimum_ttl
-  }
-
-  if (currentRrsets) {
-    await updateRrset(DEDYN_NAME, rrset)
-  } else {
-    await addRrset(DEDYN_NAME, rrset)
-  }
-
-  res.status(201)
+  next()
 }))
 
-// Remove matching rrsets
-app.post('/cleanup', ash( async(req, res) => {
+// Routes
+app.post('/present', ash(async (req, res, next) => {
+  const { minimumTtl } = req.app.locals
+  const { fqdn, value } = req.body
+
+  const subname = getInfix(DEDYN_NAME, fqdn)
+  const token = `\"${value}\"`
+
+  const current = await resource.current(subname)
+  await resource.update(subname, [...current, token], minimumTtl)
+  
+  res.sendStatus(201)
+
+  next()
+}))
+
+app.post('/cleanup', ash(async (req, res, next) => {
   const { fqdn } = req.body
 
-  const rrset = {
-    subname: `_acme-challenge${getInfix(DEDYN_NAME, fqdn)}`,
-    type: 'TXT'
-  }
+  const subname = getInfix(DEDYN_NAME, fqdn)
 
-  await deleteRrset(DEDYN_NAME, rrset)
+  await resource.delete(subname)
 
-  res.status(204)
+  res.sendStatus(204)
+
+  next()
 }))
 
 app.use((err, req, res, next) => {
-  console.error(err.stack)
+  console.error(err)
+  res.sendStatus(500)
 })
 
-app.listen(PORT, HOST, async () => {
-  try {
-    minimum_ttl = await getMinimumTTL(DEDYN_NAME)
-  } catch (e) {
-    console.error(e)
-    process.exit(1)
-  }
-
-  console.log(`
-minimum_ttl is ${minimum_ttl}
-
-Server started on ${HOST}:${PORT}...
-`)
-})
-
-async function getCurrentRrsets(domainName, fqdn) {
-  try {
-    const { data } = await request.get(`domains/${domainName}/rrsets?subname=${fqdn}&type=TXT`)
-    return get(data, 'records')
-  } catch (e) {
-    throw new Error('Could not get current rrsets')
-  }
-}
-
-async function getMinimumTTL(domainName) {
-  try {
-    const { data } = await request.get(`domains/${domainName}/`)
-    return get(data, 'minimum_ttl')
-  } catch (e) {
-    throw e
-  }
-}
-
-async function addRrset(domainName, rrset) {
-  try {
-    const { data } = await request.post(`domains/${domainName}/rrsets/`, rrset)
-    return data
-  } catch (e) {
-    throw new Error(`Could not add rrset`)
-  }
-}
-
-function deleteRrset(domainName, rrset) {
-  return new Promise((resolve, reject) => {
-    request.delete(`domains/${domainName}/rrsets/${rrset.subname}/${rrset.type}/`)
-  })
-}
-
-function updateRrset(domainName, rrset) {
-  return new Promise((resolve, reject) => {
-    request.put(`domains/${domainName}/rrsets/${rrset.subname}/${rrset.type}/`, rrset)
-  })
-}
+app.listen(PORT, HOST, () => console.log(`Server started on ${HOST}:${PORT}...`))
