@@ -1,0 +1,12 @@
+version: '3.7'
+
+services:
+  proxy:
+    build: .
+    container_name: desec-proxy
+    ports:
+      - 8080:8080
+    env_file: .env
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8080

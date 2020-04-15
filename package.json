@@ -1,7 +1,7 @@
 {
   "name": "desec-io-dns-adapter",
   "version": "1.0.0",
-  "description": "",
+  "description": "A http-based adapter for Traefik to solve DNS-01 Challanges with deSEC",
   "main": "index.js",
   "scripts": {
     "dev": "env NODE_ENV=development node src/index.js",
