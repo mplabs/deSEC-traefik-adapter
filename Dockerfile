@@ -1,5 +1,5 @@
 
-FROM node:13.13-alpine as desec-proxy
+FROM node:22-alpine AS desec-proxy
 
 ENV NODE_ENV=production
 
