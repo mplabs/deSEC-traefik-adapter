@@ -27,9 +27,23 @@ docker compose up -d
 `DEDYN_TOKEN` is the only required variable. `HOST` and `PORT` default to
 `127.0.0.1:1337`, and the bundled `docker-compose.yml` sets them to `0.0.0.0:8080`.
 
-> **Do not expose this service publicly.** It has no authentication of its own,
-> and anyone who can reach it can write DNS records in your zones. Keep it on an
-> internal Docker network, reachable only by Traefik.
+### Protecting it
+
+Anyone who can reach this service can write DNS records in your zones, so keep
+it on an internal Docker network reachable only by Traefik.
+
+If it has to be reachable beyond that, set `AUTH_USER` and `AUTH_PASSWORD` and
+the adapter requires HTTP basic auth. Both must be set; leaving them unset keeps
+the endpoints open and logs a warning at startup.
+
+```sh
+AUTH_USER=traefik
+AUTH_PASSWORD=a-long-random-string
+```
+
+Pass the same pair to Traefik as `HTTPREQ_USERNAME` / `HTTPREQ_PASSWORD`. Basic
+auth sends the password in the clear, so terminate TLS in front of the adapter
+if the traffic ever leaves the host.
 
 ## Wiring up Traefik
 
@@ -42,6 +56,8 @@ services:
     image: traefik:v3
     environment:
       - HTTPREQ_ENDPOINT=http://desec-proxy:8080
+      - HTTPREQ_USERNAME=${AUTH_USER}
+      - HTTPREQ_PASSWORD=${AUTH_PASSWORD}
       - HTTPREQ_PROPAGATION_TIMEOUT=300
       - HTTPREQ_POLLING_INTERVAL=10
     # ...
