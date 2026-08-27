@@ -4,66 +4,71 @@ const bodyParser = require('body-parser')
 const express = require('express')
 const logger = require('morgan')
 
-const { ash, getInfix } = require('./libs/util')
+const { ash } = require('./libs/util')
 const Resource = require('./libs/desec.resource')
 
 const {
   HOST = '127.0.0.1',
   PORT = 1337,
   DEDYN_TOKEN,
-  DEDYN_NAME,
-  NODE_ENV
+  NODE_ENV,
 } = process.env
 
-if (!(DEDYN_NAME || DEDYN_TOKEN)) {
-  throw new Error('Set DEDYN_TOKEN and DEDYN_NAME as environment variables.')
-  process.exit(1)
+if (!DEDYN_TOKEN) {
+  throw new Error('Set DEDYN_TOKEN as environment variable.')
 }
 
-const resource = Resource({ domainName: DEDYN_NAME, token: DEDYN_TOKEN })
+const resource = Resource({ token: DEDYN_TOKEN })
 
 const app = express()
 
 app.use(bodyParser.json())
 app.use(logger(NODE_ENV === 'production' ? 'tiny' : 'dev'))
 
-app.use(ash(async (req, res, next) => {
-  req.app.locals.minimumTtl = await resource.minimumTtl()
-
-  next()
-}))
-
 // Routes
-app.post('/present', ash(async (req, res, next) => {
-  const { minimumTtl } = req.app.locals
-  const { fqdn, value } = req.body
+app.post(
+  '/present',
+  ash(async (req, res, next) => {
+    const { fqdn, value } = req.body
 
-  const subname = getInfix(DEDYN_NAME, fqdn)
-  const token = `\"${value}\"`
+    const token = `\"${value}\"`
+    const { domain, subdomain, minimumTtl } = await resource.zoneFor(fqdn)
+    const current = await resource.current({ domain, subdomain })
+    await resource.update({
+      domain,
+      subdomain,
+      records: [...current, token],
+      minimumTtl,
+    })
 
-  const current = await resource.current(subname)
-  await resource.update(subname, [...current, token], minimumTtl)
-  
-  res.sendStatus(201)
+    res.sendStatus(201)
 
-  next()
-}))
+    next()
+  })
+)
 
-app.post('/cleanup', ash(async (req, res, next) => {
-  const { fqdn } = req.body
+app.post(
+  '/cleanup',
+  ash(async (req, res, next) => {
+    const { fqdn } = req.body
 
-  const subname = getInfix(DEDYN_NAME, fqdn)
+    const { domain, subdomain } = await resource.zoneFor(fqdn)
 
-  await resource.delete(subname)
+    await resource.delete({ domain, subdomain })
 
-  res.sendStatus(204)
+    res.sendStatus(204)
 
-  next()
-}))
+    next()
+  })
+)
 
-app.use((err, req, res, next) => {
+app.use((err, _, res, next) => {
   console.error(err)
   res.sendStatus(500)
+
+  next()
 })
 
-app.listen(PORT, HOST, () => console.log(`Server started on ${HOST}:${PORT}...`))
+app.listen(PORT, HOST, () =>
+  console.log(`Server started on ${HOST}:${PORT}...`)
+)
