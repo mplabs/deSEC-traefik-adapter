@@ -1,3 +1,5 @@
+const crypto = require('crypto')
+
 const ash = (fn) => (...args) => {
   const ret = fn(...args)
   const next = args[args.length-1]
@@ -43,8 +45,46 @@ function splitFqdn(fqdn, zoneNames) {
   return { domain: zone, subdomain: name.slice(0, -(zone.length + 1)) }
 }
 
+const digest = (value) =>
+  crypto.createHash('sha256').update(String(value)).digest()
+
+// Hashing first keeps the buffers equal-length, which timingSafeEqual requires.
+const safeEqual = (a, b) => crypto.timingSafeEqual(digest(a), digest(b))
+
+/**
+ * Opt-in HTTP basic auth, matching Traefik's HTTPREQ_USERNAME/HTTPREQ_PASSWORD.
+ *
+ * With no credentials configured this is a pass-through, so existing
+ * deployments on a private network keep working untouched.
+ */
+function basicAuth({ user, password }) {
+  if (!user || !password) {
+    return (req, res, next) => next()
+  }
+
+  return (req, res, next) => {
+    const [scheme, encoded] = String(req.headers.authorization || '').split(' ')
+    const decoded = Buffer.from(encoded || '', 'base64').toString()
+    const separator = decoded.indexOf(':')
+
+    // A userid may not contain a colon, a password may, so split on the first.
+    if (
+      String(scheme).toLowerCase() !== 'basic' ||
+      separator < 0 ||
+      !safeEqual(decoded.slice(0, separator), user) ||
+      !safeEqual(decoded.slice(separator + 1), password)
+    ) {
+      res.set('WWW-Authenticate', 'Basic realm="desec-adapter"').sendStatus(401)
+      return
+    }
+
+    next()
+  }
+}
+
 module.exports = {
   ash,
+  basicAuth,
   get,
   splitFqdn,
 }
