@@ -35,3 +35,41 @@ it('should reject an fqdn in no owned zone', () => {
 it('should reject a bare zone with no subname', () => {
   expect(() => splitFqdn('mplabs.cloud.', zones)).toThrow('No deSEC zone owns')
 })
+
+describe('basicAuth', () => {
+  const credentials = { user: 'traefik', password: 'p:ssw0rd' }
+  const header = (user, password) =>
+    `Basic ${Buffer.from(`${user}:${password}`).toString('base64')}`
+
+  let res, next
+
+  const call = (authorization, options = credentials) => {
+    res = { set: jest.fn(() => res), sendStatus: jest.fn() }
+    next = jest.fn()
+    require('./util').basicAuth(options)({ headers: { authorization } }, res, next)
+  }
+
+  it('should pass through when no credentials are configured', () => {
+    call(undefined, {})
+    expect(next).toHaveBeenCalled()
+  })
+
+  it('should accept correct credentials, colons in the password included', () => {
+    call(header('traefik', 'p:ssw0rd'))
+    expect(next).toHaveBeenCalled()
+    expect(res.sendStatus).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['a wrong password', header('traefik', 'nope')],
+    ['a wrong user', header('nobody', 'p:ssw0rd')],
+    ['a missing header', undefined],
+    ['a non-basic scheme', 'Bearer sometoken'],
+    ['garbage', 'Basic not-base64!!'],
+  ])('should reject %s', (_, authorization) => {
+    call(authorization)
+    expect(next).not.toHaveBeenCalled()
+    expect(res.sendStatus).toHaveBeenCalledWith(401)
+    expect(res.set).toHaveBeenCalledWith('WWW-Authenticate', expect.any(String))
+  })
+})
